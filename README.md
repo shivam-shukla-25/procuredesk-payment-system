@@ -1,24 +1,137 @@
-# README
+# Invoice & Payment Refactor
 
-This README would normally document whatever steps are necessary to get the
-application up and running.
+Minimal **Rails 7.2** API app that refactors simplified `Invoice` and `Payment`
+models. Scope is intentionally narrow: models, migrations, RSpec, and design
+notes — no controllers, views, or auth.
 
-Things you may want to cover:
+## Stack
 
-* Ruby version
+| Piece | Choice |
+|--------|--------|
+| Ruby | 3.4.x (see `.ruby-version`) |
+| Rails | 7.2 |
+| DB | SQLite |
+| Tests | RSpec + FactoryBot + Shoulda Matchers |
 
-* System dependencies
+## Setup
 
-* Configuration
+```bash
+bundle install
+bin/rails db:setup
+bundle exec rspec
+```
 
-* Database creation
+Optional lint:
 
-* Database initialization
+```bash
+bundle exec rubocop
+```
 
-* How to run the test suite
+## Usage (public API)
 
-* Services (job queues, cache servers, search engines, etc.)
+User-facing amounts are **dollars**. Persistence is always **integer pennies**.
 
-* Deployment instructions
+```ruby
+invoice = Invoice.create!(total: 200.00)   # stores 20_000 cents
+invoice.record_payment(100.00, :charge)   # partial payment
+invoice.record_payment(100.00, :cash)     # settles the balance
 
-* ...
+invoice.fully_paid?   # => true
+invoice.amount_owed   # => 0.0 (BigDecimal)
+```
+
+Domain failures raise `Invoice::PaymentError` (overpay, non-positive amount,
+invalid payment method). Message copy lives in `config/locales/en.yml`.
+
+---
+
+## Mistakes in the original code
+
+1. **`fully_paid?` was inverted** — it returned `amount_owed != 0`, so unpaid
+   invoices looked “paid.”
+2. **`amount_owed` summed the wrong column** — `:amount_paid` does not exist;
+   the column is `:amount`.
+3. **Cent conversion never assigned** — `translate_invoice_total_to_cents`
+   computed `self.invoice_total * 100` and discarded the result.
+4. **Integer column truncation** — even a fixed callback would run *after*
+   ActiveRecord casts `200.00` → `200`. Conversion must happen in the writer
+   before the type caster.
+5. **Wrong association** — `Payment` used `has_one :invoice`; payments
+   belong to an invoice (`belongs_to`).
+6. **Broken method lookup** — `METHODS.value(...)` is not Hash API; forward
+   map is `METHODS[symbol]`. Reverse lookup for `#payment_method` needs
+   `METHODS.key(id)`, not `METHODS[id]`.
+7. **Validation timing** — `payment_method_id` was validated before
+   `before_create` set it. Mapping now runs `before_validation`.
+8. **`attr_accessible`** — removed in Rails 4; irrelevant on Rails 7.
+9. **No graceful failure path** — invalid methods, zero/negative amounts, and
+   overpayment were undefined. Callers now get a single domain error type.
+10. **Inconsistent units** — comments said “dollars” while internals mixed
+    pennies without naming. Public methods return dollars; `*_cents` helpers
+    make the unit explicit.
+
+---
+
+## Design decisions
+
+### Money boundary (`MoneyConvertible`)
+
+Currency math is centralized so Invoice and Payment do not each invent
+rounding rules. `BigDecimal` avoids classic Float drift (`0.1 + 0.2`).
+Blank-input messages are localized under `money.errors.*`.
+
+### `total` instead of `invoice_total`
+
+The column lives on `invoices`, so the `invoice_` prefix adds noise without
+clarity. The assignment’s dollar create example still applies:
+
+`Invoice.create!(total: 200.00)`.
+
+### Dollars in, pennies stored
+
+The writer `total=` converts dollars → cents before ActiveRecord’s integer
+cast. That preserves the comfortable create API while guaranteeing the DB
+never stores floats.
+
+### `Invoice::PaymentError`
+
+Validation errors are fine for attribute-level issues. Overpayment and
+“amount must be positive” are **business rules** about recording a payment,
+so `record_payment` raises a dedicated error. Controllers (if added later)
+can `rescue Invoice::PaymentError` in one place. Copy is in `en.yml`, not
+hard-coded strings.
+
+### Payment methods as an integer map
+
+The brief’s `payment_method_id` is kept, but there is no `payment_methods`
+table — it is an enum-like code, not a FK. A frozen `METHODS` hash is the
+single source of truth for validation and symbol ↔ id conversion.
+
+### Partial payments
+
+`has_many :payments` plus `amount_owed_cents` supports multiple payments and
+partial settlement without a separate “balance” column (balance is derived,
+so it cannot drift from payment rows).
+
+### What we deliberately skipped
+
+Service objects, money gems, and a real `PaymentMethod` model would be
+reasonable in a larger system. For this scope they would obscure the bugfix
+and make review harder. The model layer is enough to prove correctness.
+
+---
+
+## Tests
+
+Specs lock in the original bugs and the intended behavior:
+
+- dollar → cent persistence
+- `fully_paid?` / partial payments
+- overpay and invalid method errors
+- payment method mapping and `belongs_to :invoice`
+
+```bash
+bundle exec rspec
+```
+
+CI (GitHub Actions) runs Brakeman, RuboCop, and RSpec on `main` / PRs.
