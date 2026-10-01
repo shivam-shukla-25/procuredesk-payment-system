@@ -3,26 +3,36 @@
 # Handles simplified invoices (requests for payment).
 #
 # Public money inputs/outputs use dollars for human comfort; the database
-# column +total+ always stores integer pennies.
+# column +total+ always stores integer pennies. Prefer +create_with_dollars!+
+# or +total_dollars=+ for dollar input — do not treat +total=+ as dollars
+# (that setter stores raw cents and avoids double-conversion hazards).
 class Invoice < ApplicationRecord
   # How many times to retry when optimistic locking detects a concurrent update.
   MAX_PAYMENT_LOCK_RETRIES = 3
 
   has_many :payments, dependent: :destroy, inverse_of: :invoice
 
+  # Transient dollar input. Converted to +total+ (cents) before validation so
+  # ActiveRecord never truncates 200.00 → 200 on the integer column, and so
+  # re-assigning persisted cents through +total=+ cannot multiply by 100 again.
+  attr_accessor :total_dollars
+
+  before_validation :apply_total_dollars, if: -> { !total_dollars.nil? }
+
   validates :total, presence: true,
                     numericality: { only_integer: true, greater_than: 0 }
 
-  # Accepts a dollar amount (per the assignment create example) and persists
-  # it as pennies. Conversion happens in the writer — before ActiveRecord's
-  # integer type caster truncates 200.00 → 200 — and we actually assign the
-  # result (the original callback computed `* 100` but discarded it).
-  #
-  # Both 200 and 200.00 are treated as dollars ($200.00 → 20_000 cents).
-  def total=(value)
-    return super(nil) if value.nil?
+  # Preferred create API for human-facing dollar amounts.
+  # Example: Invoice.create_with_dollars!(200.00)
+  def self.create_with_dollars!(dollars, **attributes)
+    create!(attributes.merge(total_dollars: dollars))
+  end
 
-    super(MoneyConvertible.to_cents(value))
+  # Dollar view of the persisted cent total (read-only convenience).
+  def total_in_dollars
+    return if total.nil?
+
+    MoneyConvertible.to_dollars(total)
   end
 
   # Returns true when the invoice balance is fully settled.
@@ -91,5 +101,13 @@ class Invoice < ApplicationRecord
     rescue ActiveRecord::RecordInvalid => e
       raise PaymentError, e.record.errors.full_messages.to_sentence
     end
+  end
+
+  private
+
+  # Writes cents into +total+ from +total_dollars+ once, at the validation
+  # boundary, instead of overriding +total=+ permanently.
+  def apply_total_dollars
+    self.total = MoneyConvertible.to_cents(total_dollars)
   end
 end

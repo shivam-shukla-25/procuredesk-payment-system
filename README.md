@@ -32,13 +32,19 @@ bundle exec rubocop
 User-facing amounts are **dollars**. Persistence is always **integer pennies**.
 
 ```ruby
-invoice = Invoice.create!(total: 200.00)   # stores 20_000 cents
-invoice.record_payment(100.00, :charge)   # partial payment
-invoice.record_payment(100.00, :cash)     # settles the balance
+invoice = Invoice.create_with_dollars!(200.00)  # or create!(total_dollars: 200.00)
+invoice.record_payment(100.00, :charge)        # partial payment
+invoice.record_payment(100.00, :cash)          # settles the balance
 
-invoice.fully_paid?   # => true
-invoice.amount_owed   # => 0.0 (BigDecimal)
+invoice.fully_paid?        # => true
+invoice.amount_owed        # => 0.0 (BigDecimal)
+invoice.total              # => 20000 (cents)
+invoice.total_in_dollars   # => 200.0
 ```
+
+`total=` is raw cents only. Dollar input goes through `total_dollars` /
+`create_with_dollars!` so persisted cents are never accidentally multiplied
+again on update.
 
 Domain failures raise `Invoice::PaymentError` (overpay, non-positive amount,
 invalid payment method). Message copy lives in `config/locales/en.yml`.
@@ -53,9 +59,9 @@ invalid payment method). Message copy lives in `config/locales/en.yml`.
    the column is `:amount`.
 3. **Cent conversion never assigned** — `translate_invoice_total_to_cents`
    computed `self.invoice_total * 100` and discarded the result.
-4. **Integer column truncation** — even a fixed callback would run *after*
-   ActiveRecord casts `200.00` → `200`. Conversion must happen in the writer
-   before the type caster.
+4. **Integer column truncation** — a create-time callback runs *after*
+   ActiveRecord casts `200.00` → `200` on an integer column. Dollar input must
+   be converted before that cast (we use a virtual `total_dollars` attribute).
 5. **Wrong association** — `Payment` used `has_one :invoice`; payments
    belong to an invoice (`belongs_to`).
 6. **Broken method lookup** — `METHODS.value(...)` is not Hash API; forward
@@ -83,15 +89,22 @@ Blank-input messages are localized under `money.errors.*`.
 ### `total` instead of `invoice_total`
 
 The column lives on `invoices`, so the `invoice_` prefix adds noise without
-clarity. The assignment’s dollar create example still applies:
+clarity. The column stores **cents**.
 
-`Invoice.create!(total: 200.00)`.
+### Dollars in via `total_dollars` / `create_with_dollars!`
 
-### Dollars in, pennies stored
+Overriding `total=` to mean “dollars” is convenient for the assignment’s create
+example, but unsafe long-term: any later `invoice.update!(total: invoice.total)`
+would multiply cents by 100 again.
 
-The writer `total=` converts dollars → cents before ActiveRecord’s integer
-cast. That preserves the comfortable create API while guaranteeing the DB
-never stores floats.
+Instead:
+
+- `total` / `total=` — integer **cents** (DB attribute, no magic)
+- `total_dollars` — virtual dollar input, converted in `before_validation`
+- `create_with_dollars!(200.00)` — preferred public create API
+- `total_in_dollars` — dollar read helper
+
+That keeps the unit boundary explicit and avoids double conversion.
 
 ### `Invoice::PaymentError`
 
@@ -138,7 +151,8 @@ and make review harder. The model layer is enough to prove correctness.
 
 Specs lock in the original bugs and the intended behavior:
 
-- dollar → cent persistence
+- dollar → cent persistence via `total_dollars` / `create_with_dollars!`
+- no double-conversion when reassigning cents through `total=`
 - `fully_paid?` / partial payments
 - overpay and invalid method errors
 - payment method enum mapping and `belongs_to :invoice`

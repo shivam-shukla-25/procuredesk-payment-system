@@ -2,7 +2,7 @@
 
 FactoryBot.define do
   factory :invoice do
-    total { 200.00 }
+    total_dollars { 200.00 }
   end
 
   factory :payment do

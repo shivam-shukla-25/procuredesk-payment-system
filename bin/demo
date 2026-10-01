@@ -8,8 +8,8 @@ require_relative "../config/environment"
 
 puts "== Invoice & Payment demo ==\n\n"
 
-invoice = Invoice.create!(total: 200.00)
-puts "Created invoice ##{invoice.id} for $200.00 (stored as #{invoice.total} cents)"
+invoice = Invoice.create_with_dollars!(200.00)
+puts "Created invoice ##{invoice.id} for $#{invoice.total_in_dollars} (stored as #{invoice.total} cents)"
 
 payment = invoice.record_payment(100.00, :charge)
 puts "Recorded $100.00 via :charge (payment ##{payment.id}, method=#{payment.payment_method})"

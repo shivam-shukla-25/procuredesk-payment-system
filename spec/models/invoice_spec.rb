@@ -8,7 +8,7 @@ RSpec.describe Invoice, type: :model do
   end
 
   describe "validations" do
-    it "requires a positive total" do
+    it "requires a positive total in cents" do
       invoice = described_class.new(total: 0)
       expect(invoice).not_to be_valid
       expect(invoice.errors[:total]).to be_present
@@ -16,22 +16,36 @@ RSpec.describe Invoice, type: :model do
   end
 
   describe "dollar → cent persistence" do
-    it "stores total in pennies when created with dollars" do
-      # Matches the assignment's primary example API (dollars in, cents stored).
-      invoice = described_class.create!(total: 200.00)
+    it "stores total in pennies via create_with_dollars!" do
+      invoice = described_class.create_with_dollars!(200.00)
 
       expect(invoice.reload.total).to eq(20_000)
+      expect(invoice.total_in_dollars).to eq(BigDecimal("200.0"))
     end
 
-    it "treats bare integers as dollars as well (200 → 20000 cents)" do
-      invoice = described_class.create!(total: 200)
+    it "accepts total_dollars on create / assign" do
+      invoice = described_class.create!(total_dollars: 200)
 
       expect(invoice.total).to eq(20_000)
+    end
+
+    it "treats total= as raw cents (no hidden dollar conversion)" do
+      invoice = described_class.create!(total: 20_000)
+
+      expect(invoice.total).to eq(20_000)
+      expect(invoice.total_in_dollars).to eq(BigDecimal("200.0"))
+    end
+
+    it "does not double-convert when reassigning persisted cents" do
+      invoice = described_class.create_with_dollars!(200.00)
+      invoice.update!(total: invoice.total)
+
+      expect(invoice.reload.total).to eq(20_000)
     end
   end
 
   describe "#fully_paid?" do
-    let(:invoice) { create(:invoice, total: 200.00) }
+    let(:invoice) { create(:invoice) }
 
     it "is false when nothing has been paid" do
       expect(invoice).not_to be_fully_paid
@@ -50,7 +64,7 @@ RSpec.describe Invoice, type: :model do
   end
 
   describe "#amount_owed" do
-    let(:invoice) { create(:invoice, total: 200.00) }
+    let(:invoice) { create(:invoice) }
 
     it "returns the full total in dollars with no payments" do
       expect(invoice.amount_owed).to eq(BigDecimal("200.0"))
@@ -63,7 +77,7 @@ RSpec.describe Invoice, type: :model do
   end
 
   describe "#record_payment" do
-    let(:invoice) { create(:invoice, total: 200.00) }
+    let(:invoice) { create(:invoice) }
 
     it "records a payment in pennies with the given method" do
       payment = invoice.record_payment(100.00, :charge)
