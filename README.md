@@ -25,8 +25,12 @@ Optional lint:
 
 ```bash
 bundle exec rubocop
+bin/brakeman --no-pager -i config/brakeman.ignore
 ```
 
+`config/brakeman.ignore` documents one intentional ignore: Rails 7.2 is past
+EOL in current Brakeman, but the assignment asks for Rails 7.x. Real security
+findings still fail the scan.
 ## Usage (public API)
 
 User-facing amounts are **dollars**. Persistence is always **integer pennies**.
