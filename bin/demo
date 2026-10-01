@@ -1,0 +1,29 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Demonstrates the refactored Invoice / Payment API end-to-end.
+# Usage: bin/demo
+
+require_relative "../config/environment"
+
+puts "== Invoice & Payment demo ==\n\n"
+
+invoice = Invoice.create!(total: 200.00)
+puts "Created invoice ##{invoice.id} for $200.00 (stored as #{invoice.total} cents)"
+
+payment = invoice.record_payment(100.00, :charge)
+puts "Recorded $100.00 via :charge (payment ##{payment.id}, method=#{payment.payment_method})"
+puts "  amount_owed=#{invoice.amount_owed}  fully_paid?=#{invoice.fully_paid?}"
+
+invoice.record_payment(100.00, :cash)
+puts "Recorded $100.00 via :cash"
+puts "  amount_owed=#{invoice.amount_owed}  fully_paid?=#{invoice.fully_paid?}"
+
+print "\nOverpayment attempt: "
+begin
+  invoice.record_payment(1.00, :check)
+rescue Invoice::PaymentError => e
+  puts "rescued Invoice::PaymentError — #{e.message}"
+end
+
+puts "\nDone."

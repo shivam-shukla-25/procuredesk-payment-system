@@ -8,12 +8,3 @@ en:
       errors:
         amount_must_be_positive: "Payment amount must be greater than zero"
         exceeds_amount_owed: "Payment exceeds amount owed (%{amount_owed})"
-  activerecord:
-    errors:
-      models:
-        payment:
-          attributes:
-            payment_method_id:
-              inclusion: "is not a supported payment method"
-            raw_payment_method:
-              unsupported: "is not a supported payment method"

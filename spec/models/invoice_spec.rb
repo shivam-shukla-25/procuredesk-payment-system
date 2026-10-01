@@ -70,7 +70,8 @@ RSpec.describe Invoice, type: :model do
 
       expect(payment.amount).to eq(10_000)
       expect(payment.payment_method).to eq(:charge)
-      expect(payment.payment_method_id).to eq(Payment::METHODS[:charge])
+      expect(payment.payment_method_id).to eq("charge")
+      expect(payment.read_attribute_before_type_cast(:payment_method_id)).to eq(3)
     end
 
     it "allows multiple payments toward one invoice" do

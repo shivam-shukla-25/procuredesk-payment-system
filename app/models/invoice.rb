@@ -62,7 +62,8 @@ class Invoice < ApplicationRecord
       )
     end
 
-    payments.create!(amount: cents, raw_payment_method: payment_method)
+    # Enum accepts the symbol/string directly onto payment_method_id.
+    payments.create!(amount: cents, payment_method_id: payment_method)
   rescue ActiveRecord::RecordInvalid => e
     raise PaymentError, e.record.errors.full_messages.to_sentence
   end

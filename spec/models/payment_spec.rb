@@ -14,33 +14,41 @@ RSpec.describe Payment, type: :model do
     it { is_expected.to validate_numericality_of(:amount).only_integer.is_greater_than(0) }
   end
 
-  describe "payment method mapping" do
-    it "maps raw_payment_method symbols onto payment_method_id before validation" do
-      payment = build(:payment, raw_payment_method: :check)
+  describe "payment method enum" do
+    it "accepts supported method symbols on payment_method_id" do
+      payment = build(:payment, payment_method_id: :check)
 
       expect(payment).to be_valid
-      expect(payment.payment_method_id).to eq(2)
+      expect(payment).to be_check
       expect(payment.payment_method).to eq(:check)
     end
 
     it "accepts string method names" do
-      payment = build(:payment, raw_payment_method: "CHARGE")
+      payment = build(:payment, payment_method_id: "charge")
 
       expect(payment).to be_valid
       expect(payment.payment_method).to eq(:charge)
     end
 
     it "rejects unknown methods" do
-      payment = build(:payment, raw_payment_method: :venmo)
+      payment = build(:payment, payment_method_id: :venmo)
 
       expect(payment).not_to be_valid
-      expect(payment.errors[:raw_payment_method]).to be_present
+      expect(payment.errors[:payment_method_id]).to be_present
+    end
+
+    it "exposes the integer mapping used in the database" do
+      expect(described_class.payment_method_ids).to eq(
+        "cash" => 1,
+        "check" => 2,
+        "charge" => 3
+      )
     end
   end
 
   describe "#payment_method" do
-    it "returns a symbol for a persisted payment_method_id" do
-      payment = create(:payment, raw_payment_method: :cash)
+    it "returns a symbol for a persisted payment" do
+      payment = create(:payment, payment_method_id: :cash)
 
       expect(payment.reload.payment_method).to eq(:cash)
     end
@@ -56,11 +64,11 @@ RSpec.describe Payment, type: :model do
 
   describe "#valid_payment_method?" do
     it "is true for supported methods" do
-      expect(build(:payment, raw_payment_method: :cash).valid_payment_method?).to be(true)
+      expect(build(:payment, payment_method_id: :cash).valid_payment_method?).to be(true)
     end
 
     it "is false for unsupported methods" do
-      expect(build(:payment, raw_payment_method: :wire).valid_payment_method?).to be(false)
+      expect(build(:payment).valid_payment_method?(:wire)).to be(false)
     end
   end
 end

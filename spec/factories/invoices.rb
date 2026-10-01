@@ -8,6 +8,6 @@ FactoryBot.define do
   factory :payment do
     invoice
     amount { 10_000 } # $100.00 in cents — Payment stores pennies directly
-    raw_payment_method { :cash }
+    payment_method_id { :cash }
   end
 end

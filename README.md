@@ -101,11 +101,13 @@ so `record_payment` raises a dedicated error. Controllers (if added later)
 can `rescue Invoice::PaymentError` in one place. Copy is in `en.yml`, not
 hard-coded strings.
 
-### Payment methods as an integer map
+### Payment methods as a Rails enum
 
-The brief’s `payment_method_id` is kept, but there is no `payment_methods`
-table — it is an enum-like code, not a FK. A frozen `METHODS` hash is the
-single source of truth for validation and symbol ↔ id conversion.
+The brief’s `payment_method_id` column is kept, but there is no
+`payment_methods` table — it is an integer code, not a FK. A Rails `enum`
+on that column is the idiomatic expression of that intent: symbol assignment
+(`:charge`), query helpers (`charge?`), and inclusion validation via
+`validate: true`.
 
 ### Partial payments
 
@@ -128,10 +130,11 @@ Specs lock in the original bugs and the intended behavior:
 - dollar → cent persistence
 - `fully_paid?` / partial payments
 - overpay and invalid method errors
-- payment method mapping and `belongs_to :invoice`
+- payment method enum mapping and `belongs_to :invoice`
 
 ```bash
 bundle exec rspec
+bin/demo          # optional end-to-end smoke script
 ```
 
 CI (GitHub Actions) runs Brakeman, RuboCop, and RSpec on `main` / PRs.
