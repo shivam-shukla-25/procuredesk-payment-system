@@ -107,5 +107,35 @@ RSpec.describe Invoice, type: :model do
         invoice.record_payment(10.00, :bitcoin)
       }.to raise_error(Invoice::PaymentError)
     end
+
+    it "records the payment inside a locked transaction and bumps lock_version" do
+      expect {
+        invoice.record_payment(25.00, :cash)
+      }.to change { invoice.reload.lock_version }.by(1)
+
+      expect(invoice.payments.count).to eq(1)
+    end
+
+    it "re-checks the balance under lock so a second full payment cannot overpay" do
+      invoice.record_payment(200.00, :charge)
+
+      expect {
+        invoice.record_payment(1.00, :cash)
+      }.to raise_error(
+        Invoice::PaymentError,
+        I18n.t("invoice.payments.errors.exceeds_amount_owed", amount_owed: invoice.amount_owed)
+      )
+    end
+
+    it "maps exhausted optimistic-lock retries to a domain error" do
+      allow(invoice).to receive(:with_lock).and_raise(ActiveRecord::StaleObjectError.new(invoice, "touch"))
+
+      expect {
+        invoice.record_payment(10.00, :cash)
+      }.to raise_error(
+        Invoice::PaymentError,
+        I18n.t("invoice.payments.errors.concurrent_update")
+      )
+    end
   end
 end

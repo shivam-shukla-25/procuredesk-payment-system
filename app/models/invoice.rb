@@ -5,6 +5,9 @@
 # Public money inputs/outputs use dollars for human comfort; the database
 # column +total+ always stores integer pennies.
 class Invoice < ApplicationRecord
+  # How many times to retry when optimistic locking detects a concurrent update.
+  MAX_PAYMENT_LOCK_RETRIES = 3
+
   has_many :payments, dependent: :destroy, inverse_of: :invoice
 
   validates :total, presence: true,
@@ -46,6 +49,12 @@ class Invoice < ApplicationRecord
   end
 
   # Records a payment in dollars against this invoice.
+  #
+  # Concurrency: +with_lock+ takes a row lock (transaction + SELECT FOR UPDATE
+  # where supported) so the balance check and insert cannot interleave with
+  # another payment. +lock_version+ / +touch+ adds optimistic locking so other
+  # concurrent invoice updates also conflict instead of silently overwriting.
+  #
   # Raises Invoice::PaymentError for domain violations so callers can rescue
   # a single error type instead of probing ActiveRecord validation messages.
   def record_payment(amount_dollars, payment_method)
@@ -55,16 +64,32 @@ class Invoice < ApplicationRecord
       raise PaymentError, I18n.t("invoice.payments.errors.amount_must_be_positive")
     end
 
-    if cents > amount_owed_cents
-      raise PaymentError, I18n.t(
-        "invoice.payments.errors.exceeds_amount_owed",
-        amount_owed: amount_owed
-      )
-    end
+    attempts = 0
 
-    # Enum accepts the symbol/string directly onto payment_method_id.
-    payments.create!(amount: cents, payment_method_id: payment_method)
-  rescue ActiveRecord::RecordInvalid => e
-    raise PaymentError, e.record.errors.full_messages.to_sentence
+    begin
+      with_lock do
+        if cents > amount_owed_cents
+          raise PaymentError, I18n.t(
+            "invoice.payments.errors.exceeds_amount_owed",
+            amount_owed: amount_owed
+          )
+        end
+
+        payment = payments.create!(amount: cents, payment_method_id: payment_method)
+        # Bumps lock_version so optimistic locking observes this write.
+        touch
+        payment
+      end
+    rescue ActiveRecord::StaleObjectError
+      attempts += 1
+      if attempts >= MAX_PAYMENT_LOCK_RETRIES
+        raise PaymentError, I18n.t("invoice.payments.errors.concurrent_update")
+      end
+
+      reload
+      retry
+    rescue ActiveRecord::RecordInvalid => e
+      raise PaymentError, e.record.errors.full_messages.to_sentence
+    end
   end
 end

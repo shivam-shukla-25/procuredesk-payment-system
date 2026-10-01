@@ -8,3 +8,4 @@ en:
       errors:
         amount_must_be_positive: "Payment amount must be greater than zero"
         exceeds_amount_owed: "Payment exceeds amount owed (%{amount_owed})"
+        concurrent_update: "Could not record payment due to a concurrent update; please retry"

@@ -115,6 +115,17 @@ on that column is the idiomatic expression of that intent: symbol assignment
 partial settlement without a separate “balance” column (balance is derived,
 so it cannot drift from payment rows).
 
+### Concurrent payments (`with_lock` + `lock_version`)
+
+Two clients can both read “$100 owed” and both try to pay $100. Without
+serialization that overpays the invoice.
+
+`record_payment` uses `with_lock` so the balance check and payment insert run
+in one row-locked transaction. Recording a payment also `touch`es the invoice,
+which bumps `lock_version` (optimistic locking). If a stale write still slips
+through, we retry a few times and then raise `Invoice::PaymentError` with a
+localized concurrent-update message.
+
 ### What we deliberately skipped
 
 Service objects, money gems, and a real `PaymentMethod` model would be
@@ -131,6 +142,7 @@ Specs lock in the original bugs and the intended behavior:
 - `fully_paid?` / partial payments
 - overpay and invalid method errors
 - payment method enum mapping and `belongs_to :invoice`
+- locked `record_payment` / `lock_version` bump / concurrent-update error
 
 ```bash
 bundle exec rspec
