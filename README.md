@@ -141,9 +141,21 @@ localized concurrent-update message.
 
 ### What we deliberately skipped
 
-Service objects, money gems, and a real `PaymentMethod` model would be
-reasonable in a larger system. For this scope they would obscure the bugfix
-and make review harder. The model layer is enough to prove correctness.
+Service objects and a real `PaymentMethod` model would be reasonable in a
+larger system. For this scope they would obscure the bugfix and make review
+harder. The model layer is enough to prove correctness.
+
+### Future improvements
+
+If this domain grew beyond the take-home scope, natural next steps would be:
+
+1. **Money gem or `composed_of`** — replace hand-rolled `MoneyConvertible`
+   with a dedicated money type (currency, formatting, safer arithmetic) once
+   multiple models share money fields.
+2. **Request specs + thin controller** — expose a small HTTP API
+   (`POST /invoices`, `POST /invoices/:id/payments`) that delegates to the
+   existing model methods and rescues `Invoice::PaymentError`, with request
+   specs covering status codes and error bodies.
 
 ---
 
