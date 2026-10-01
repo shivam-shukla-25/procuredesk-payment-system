@@ -49,6 +49,39 @@ again on update.
 Domain failures raise `Invoice::PaymentError` (overpay, non-positive amount,
 invalid payment method). Message copy lives in `config/locales/en.yml`.
 
+## Try it
+
+There is no HTTP API in this take-home (models only). Reviewers can exercise
+the same flow two ways:
+
+### 1. Demo script (fastest)
+
+```bash
+bin/demo
+```
+
+Creates a $200 invoice, records a partial payment, settles the balance, then
+shows an overpayment raising `Invoice::PaymentError`.
+
+### 2. Rails console
+
+```bash
+bin/rails console
+```
+
+```ruby
+invoice = Invoice.create_with_dollars!(200.00)
+invoice.record_payment(100.00, :charge)
+invoice.amount_owed        # => 100.0
+invoice.fully_paid?        # => false
+
+invoice.record_payment(100.00, :cash)
+invoice.fully_paid?        # => true
+
+invoice.record_payment(1.00, :check)
+# raises Invoice::PaymentError — payment exceeds amount owed
+```
+
 ---
 
 ## Mistakes in the original code
